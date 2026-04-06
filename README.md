@@ -1,3 +1,5 @@
+0xd02A7d48c22Ec19D5f3CeC0DBf3da5583bbf89F3
+
 ```solidity
 Ran 6 tests for test/test.t.sol:StakingOrderVulnerabilityTest
 [PASS] testFuzz_AlwaysVulnerable(uint96,uint96,uint16) (runs: 257, μ: 423336, ~: 428414)
