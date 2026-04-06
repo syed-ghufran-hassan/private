@@ -1,0 +1,10 @@
+Scope files:
+bridge.move
+moneyfi_adapters.move
+glade_flexible.move
+glade_guaranteed.move
+swap_helpers.move
+GuaranteedYieldLocking.move
+locking.move
+
+(excluding mock files)
