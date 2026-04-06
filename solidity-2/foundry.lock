@@ -1,0 +1,44 @@
+{
+  "lib/chainlink-brownie-contracts": {
+    "rev": "5cb41fbc9b525338b6098da5ea7dd0b7e92f89e4"
+  },
+  "lib/contracts": {
+    "rev": "a4fe56813c9e64907038f447a7358f83ec32dc14"
+  },
+  "lib/forge-std": {
+    "rev": "1eea5bae12ae557d589f9f0f0edae2faa47cb262"
+  },
+  "lib/foundry-devops": {
+    "rev": "df9f90b490423578142b5dd50752db9427efb2ac"
+  },
+  "lib/liquidity-locker-univ3-contracts": {
+    "rev": "a71fb9800487d3168b23220be3d4a7d88fb6e7cf"
+  },
+  "lib/openzeppelin-contracts": {
+    "rev": "69c8def5f222ff96f2b5beff05dfba996368aa79"
+  },
+  "lib/openzeppelin-contracts-upgradeable": {
+    "rev": "fa525310e45f91eb20a6d3baa2644be8e0adba31"
+  },
+  "lib/prb-math": {
+    "branch": {
+      "name": "release-v4",
+      "rev": "39eec818282a29df7406b8280b29c084c9a3f3b5"
+    }
+  },
+  "lib\\slipstream": {
+    "tag": {
+      "name": "v1.1.1",
+      "rev": "71d04f0020d7f39ce3fbaff067a8a9f9d32f574d"
+    }
+  },
+  "lib/swap-router-contracts": {
+    "rev": "c696aada49b33c8e764e6f0bd0a0a56bd8aa455f"
+  },
+  "lib/v3-core": {
+    "rev": "e3589b192d0be27e100cd0daaf6c97204fdb1899"
+  },
+  "lib/v3-periphery": {
+    "rev": "80f26c86c57b8a5e4b913f42844d4c8bd274d058"
+  }
+}
