@@ -2078,4 +2078,4 @@ contract GovernanceModuleHalmos is Test {
 }
 ```
 
-halmos --function <function name>
+halmos --function <functionname>
