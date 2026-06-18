@@ -106,4 +106,47 @@ contract SubscriptionFlowTest is Test {
         vm.prank(subscriber);
         mnty.approve(address(subscriptionManager), MONTHLY_PRICE);
     }
+    function test_POC_GracePeriodRenewalLostTime() public {  
+    // ASSUMPTION: Renewal logic during grace period extends from current time  
+    // (Actual SubscriptionManager.sol implementation not fully visible in context)  
+    // EXPECTED: Renewal should extend from original expiration (day 30)  
+    // ACTUAL: Renewal extends from current time (day 35), losing days 30-35  
+      
+    // Step 1: Subscribe on day 0  
+    _subscribe();  
+    uint256 initialPaidUntil = subscriptionManager.getSubscription(subscriber).paidUntil;  
+    assertEq(initialPaidUntil, block.timestamp + 30 days);  
+      
+    // Step 2: Warp to day 31 (enter grace period)  
+    vm.warp(block.timestamp + 31 days);  
+    subscriptionManager.checkAndUpdateStatus(subscriber);  
+      
+    // Verify in grace period  
+    assertEq(  
+        uint256(subscriptionManager.getSubscription(subscriber).status),  
+        uint256(SubscriptionManager.SubscriptionStatus.GRACE)  
+    );  
+      
+    // Step 3: Renew on day 35 (during grace period)  
+    vm.warp(block.timestamp + 4 days); // Total: day 35  
+    _approveMonthlyPrice();  
+      
+    uint256 balanceBefore = mnty.balanceOf(subscriber);  
+    vm.prank(subscriber);  
+    subscriptionManager.renewSubscription();  
+      
+    uint256 balanceAfter = mnty.balanceOf(subscriber);  
+    assertEq(balanceBefore - balanceAfter, MONTHLY_PRICE); // Paid full price  
+      
+    // Step 4: Check new paidUntil  
+    uint256 newPaidUntil = subscriptionManager.getSubscription(subscriber).paidUntil;  
+      
+    // IMPACT: If renewal extends from current time (day 35), paidUntil = day 65  
+    // User loses days 30-35 (5 days of paid service they already paid for)  
+    assertEq(newPaidUntil, block.timestamp + 30 days); // Extends from day 35, not day 30  
+      
+    // Calculate lost days  
+    uint256 lostDays = (block.timestamp - initialPaidUntil) / 1 days;  
+    assertEq(lostDays, 5); // Lost 5 days of service  
+}
 }
