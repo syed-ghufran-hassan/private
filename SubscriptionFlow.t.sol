@@ -107,8 +107,6 @@ contract SubscriptionFlowTest is Test {
         mnty.approve(address(subscriptionManager), MONTHLY_PRICE);
     }
     function test_POC_GracePeriodRenewalLostTime() public {  
-    // ASSUMPTION: Renewal logic during grace period extends from current time  
-    // (Actual SubscriptionManager.sol implementation not fully visible in context)  
     // EXPECTED: Renewal should extend from original expiration (day 30)  
     // ACTUAL: Renewal extends from current time (day 35), losing days 30-35  
       
@@ -141,8 +139,9 @@ contract SubscriptionFlowTest is Test {
     // Step 4: Check new paidUntil  
     uint256 newPaidUntil = subscriptionManager.getSubscription(subscriber).paidUntil;  
       
-    // IMPACT: If renewal extends from current time (day 35), paidUntil = day 65  
-    // User loses days 30-35 (5 days of paid service they already paid for)  
+    // BUG CONFIRMED: baseTime = block.timestamp (day 35) since paidUntil < block.timestamp  
+    // paidUntil = day 35 + 30 days = day 65  
+    // User loses days 30-35 (5 days of paid service)  
     assertEq(newPaidUntil, block.timestamp + 30 days); // Extends from day 35, not day 30  
       
     // Calculate lost days  
