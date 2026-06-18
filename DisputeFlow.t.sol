@@ -168,11 +168,15 @@ contract DisputeFlowTest is Test {
         mnty.approve(address(disputeResolution), DISPUTE_STAKE);
     }
     function test_POC_DisputeWindowDurationMismatch() public {  
+    // ASSUMPTION: Worker chooses not to dispute after being slashed  
+    // EXPECTED: Worker can withdraw after 3-day dispute window expires  
+    // ACTUAL: Worker blocked for 4 extra days until 7-day vault window expires  
+      
     // Step 1: Worker gets slashed  
     bytes32 slashId = _slash();  
       
-    // Step 2: Worker does NOT open a dispute (chooses not to dispute)  
-    // Skip _approveDisputeStake() and openDispute()  
+    // Step 2: Worker does NOT open a dispute  
+    // (simulating worker choosing not to dispute or missing the window)  
       
     // Step 3: Wait 3 days - DisputeResolution window expires  
     vm.warp(block.timestamp + 3 days + 1);  
@@ -182,7 +186,7 @@ contract DisputeFlowTest is Test {
     vm.prank(workerOwner);  
     disputeResolution.openDispute(slashId, keccak256("counter"));  
       
-    // Step 4: Try to withdraw at T=3 days - should fail due to StakingVault's 7-day window  
+    // Step 4: Try to withdraw at T=3 days - IMPACT: fails due to StakingVault's 7-day window  
     vm.expectRevert(StakingVault.StakeUnderDispute.selector);  
     vm.prank(workerOwner);  
     vault.withdraw(workerAgentId, 100 ether);  
@@ -190,7 +194,7 @@ contract DisputeFlowTest is Test {
     // Step 5: Wait until T=7 days - StakingVault auto-clear window expires  
     vm.warp(block.timestamp + 4 days); // Total: 7 days from slash  
       
-    // Step 6: Now withdrawal should succeed  
+    // Step 6: Now withdrawal succeeds  
     uint256 balanceBefore = mnty.balanceOf(workerOwner);  
     vm.prank(workerOwner);  
     vault.withdraw(workerAgentId, 100 ether);  
