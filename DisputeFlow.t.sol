@@ -202,36 +202,37 @@ contract DisputeFlowTest is Test {
     assertEq(mnty.balanceOf(workerOwner), balanceBefore + 100 ether);  
 }
 function test_POC_StakeLockupOnCancellation() public {  
-    // Step 1: Worker opens dispute with 100 ether stake  
-    bytes32 disputeId = _openDispute();  
+    // ASSUMPTION: Owner cancels resolution before timelock expires  
+    // WORKAROUND: Owner could propose a new resolution to refund stake  
+    // EXPECTED: Stake should be refunded when resolution is cancelled  
+    // ACTUAL: Stake is permanently locked with no recovery mechanism  
+      
+    // Step 1: Capture balances before opening dispute  
     uint256 workerBalanceBefore = mnty.balanceOf(workerOwner);  
-    uint256 contractBalanceBefore = mnty.balanceOf(address(disputeResolution));  
+      
+    // Step 2: Worker opens dispute with 100 ether stake  
+    bytes32 disputeId = _openDispute();  
       
     // Verify stake was transferred to contract  
-    assertEq(contractBalanceBefore, DISPUTE_STAKE);  
-    assertEq(workerBalanceBefore, 10_000 ether - DISPUTE_STAKE - 1_000 ether); // 1000 ether staked in vault  
+    assertEq(mnty.balanceOf(address(disputeResolution)), DISPUTE_STAKE);  
+    assertEq(mnty.balanceOf(workerOwner), workerBalanceBefore - DISPUTE_STAKE);  
       
-    // Step 2: Owner proposes resolution  
+    // Step 3: Owner proposes resolution  
     disputeResolution.proposeResolution(disputeId, true, "valid evidence");  
       
-    // Step 3: Owner cancels resolution before timelock expires  
+    // Step 4: Owner cancels resolution before timelock expires  
     disputeResolution.cancelResolution(disputeId);  
       
     // Verify pending resolution is cleared  
     assertFalse(disputeResolution.hasPendingResolution(disputeId));  
       
-    // Step 4: Try to execute resolution - should fail (no pending resolution)  
+    // Step 5: Try to execute resolution - fails (no pending resolution)  
     vm.expectRevert(DisputeResolution.NoPendingResolution.selector);  
     disputeResolution.executeResolution(disputeId);  
       
-    // Step 5: Worker has no way to reclaim stake  
-    // - executeResolution fails (no pending resolution)  
-    // - No withdraw function in DisputeResolution  
-    // - cancelResolution doesn't refund  
-      
-    // Verify stake is still locked in contract  
+    // Step 6: IMPACT: Stake is still locked in contract with no way to recover  
     assertEq(mnty.balanceOf(address(disputeResolution)), DISPUTE_STAKE);  
-    assertEq(mnty.balanceOf(workerOwner), workerBalanceBefore);  
+    assertEq(mnty.balanceOf(workerOwner), workerBalanceBefore - DISPUTE_STAKE);  
       
     // Dispute status remains OPEN but no resolution exists  
     DisputeResolution.Dispute memory dispute = disputeResolution.getDispute(disputeId);  
