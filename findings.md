@@ -1,4 +1,5 @@
-- Auditor: Syed Ghufran Hassan
+### Auditor: Syed Ghufran Hassan
+### Project: Montty Protocol 
 
 # [M-01] SubscriptionManager will cause users to lose paid subscription time during grace period renewal
 
