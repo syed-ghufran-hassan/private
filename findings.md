@@ -1,3 +1,5 @@
+- Auditor: Syed Ghufran Hassan
+
 # [M-01] SubscriptionManager will cause users to lose paid subscription time during grace period renewal
 
 ## Summary 
@@ -306,3 +308,163 @@ The owner can also manually align the durations post-deployment by calling setDi
 
 but the default mismatch remains a deployment risk.
 
+# [M-03] DisputeResolution permanently locks user dispute stakes when owner cancels resolution
+
+## Summary
+
+When the protocol owner calls cancelResolution on a pending dispute resolution, the worker's 100 ether dispute stake is permanently locked in the DisputeResolution contract with no refund mechanism. The cancellation function only deletes the pending resolution but leaves the dispute in an inconsistent state (OPEN status with no pending resolution), preventing the worker from recovering their stake through any existing function.
+
+## Root Cause
+
+The cancelResolution function in DisputeResolution.sol only deletes the pending resolution data without handling the stake refund:
+
+```solidity
+function cancelResolution(bytes32 disputeId) external onlyOwner {  
+    if (!hasPendingResolution[disputeId]) revert NoPendingResolution();  
+  
+    delete pendingResolutions[disputeId];  
+    hasPendingResolution[disputeId] = false;  
+  
+    emit ResolutionCancelled(disputeId, block.timestamp);  
+}
+```
+
+The function removes the pending resolution but does not refund the dispute.stakedAmount that was transferred during openDispute
+
+```solidity
+function cancelResolution(bytes32 disputeId) external onlyOwner {
+        if (!hasPendingResolution[disputeId]) revert NoPendingResolution();
+        delete pendingResolutions[disputeId];
+        hasPendingResolution[disputeId] = false;
+        emit ResolutionCancelled(disputeId, block.timestamp);
+    }
+```
+
+The stake refund logic only exists in executeResolution, which requires a pending resolution to exist
+
+```solidity
+  if (stakeAmount > 0) {
+                mntyToken.safeTransfer(dispute.disputant, stakeAmount);
+            }
+
+```
+
+## Internal Pre-conditions
+
+- Worker needs to call openDispute() to transfer disputeStakeAmount (100 ether) to the DisputeResolution contract
+- Owner needs to call proposeResolution() to set hasPendingResolution[disputeId] to true
+- Owner needs to call cancelResolution() to delete the pending resolution before the timelock expires
+
+## External Pre-conditions
+
+None - this is an internal protocol vulnerability.
+
+## Attack Path
+
+- Worker calls openDispute(slashId, counterEvidenceHash) and transfers 100 ether stake to DisputeResolution contract `  mntyToken.safeTransferFrom(msg.sender, address(this), disputeStakeAmount);`
+- Owner calls proposeResolution(disputeId, upheld, reasoning) to create a pending resolution
+- Before the timelock expires, owner calls `cancelResolution(disputeId)`
+
+```solidity
+ function cancelResolution(bytes32 disputeId) external onlyOwner {
+        if (!hasPendingResolution[disputeId]) revert NoPendingResolution();
+        delete pendingResolutions[disputeId];
+        hasPendingResolution[disputeId] = false;
+        emit ResolutionCancelled(disputeId, block.timestamp);
+    }
+
+```
+
+- Pending resolution is deleted and hasPendingResolution[disputeId] is set to false
+- Dispute status remains OPEN but no pending resolution exists
+- Worker cannot call executeResolution(disputeId) because hasPendingResolution[disputeId] is false
+
+```solidity
+  function executeResolution(bytes32 disputeId) external nonReentrant {
+        if (!hasPendingResolution[disputeId]) revert NoPendingResolution();
+```
+
+- Worker has no function to reclaim their 100 ether stake
+- Stake is permanently locked in DisputeResolution contract
+
+## Impact
+
+The worker suffers a permanent loss of 100 ether (the dispute stake amount). The protocol owner does not gain anything from this vulnerability, but the worker's funds are trapped with no recovery mechanism.
+
+## POC
+
+Please add below test function in `DisputeFlow.t.sol` and run `forge test --match-test test_POC_StakeLockupOnCancellation`. The test will pass as the cancelResolution() function only deletes the pending resolution without refunding the stake `DisputeResolution.sol:276-283` . The dispute remains in OPEN status with resolved = false, but there's no mechanism to recover the 100 ether stake. The trace confirms the fund lockup vulnerability in DisputeResolution.cancelResolution():
+
+| Step                | Event                                            | Stake Location              |
+|---------------------|--------------------------------------------------|-----------------------------|
+| Initial             | Worker balance: 9,000 ether                      | Worker wallet               |
+| Open dispute        | 100 ether transferred to contract                | DisputeResolution contract  |
+| Cancel resolution   | Pending resolution deleted                       | Stake still in contract     |
+| Execute resolution  | Fails (NoPendingResolution)                      | Stake still locked          |
+| Final state         | Worker: 8,900 ether, Contract: 100 ether         | Stake permanently locked    |
+
+
+```solidity
+function test_POC_StakeLockupOnCancellation() public {  
+    // ASSUMPTION: Owner cancels resolution before timelock expires  
+    // WORKAROUND: Owner could propose a new resolution to refund stake  
+    // EXPECTED: Stake should be refunded when resolution is cancelled  
+    // ACTUAL: Stake is permanently locked with no recovery mechanism  
+      
+    // Step 1: Capture balances before opening dispute  
+    uint256 workerBalanceBefore = mnty.balanceOf(workerOwner);  
+      
+    // Step 2: Worker opens dispute with 100 ether stake  
+    bytes32 disputeId = _openDispute();  
+      
+    // Verify stake was transferred to contract  
+    assertEq(mnty.balanceOf(address(disputeResolution)), DISPUTE_STAKE);  
+    assertEq(mnty.balanceOf(workerOwner), workerBalanceBefore - DISPUTE_STAKE);  
+      
+    // Step 3: Owner proposes resolution  
+    disputeResolution.proposeResolution(disputeId, true, "valid evidence");  
+      
+    // Step 4: Owner cancels resolution before timelock expires  
+    disputeResolution.cancelResolution(disputeId);  
+      
+    // Verify pending resolution is cleared  
+    assertFalse(disputeResolution.hasPendingResolution(disputeId));  
+      
+    // Step 5: Try to execute resolution - fails (no pending resolution)  
+    vm.expectRevert(DisputeResolution.NoPendingResolution.selector);  
+    disputeResolution.executeResolution(disputeId);  
+      
+    // Step 6: IMPACT: Stake is still locked in contract with no way to recover  
+    assertEq(mnty.balanceOf(address(disputeResolution)), DISPUTE_STAKE);  
+    assertEq(mnty.balanceOf(workerOwner), workerBalanceBefore - DISPUTE_STAKE);  
+      
+    // Dispute status remains OPEN but no resolution exists  
+    DisputeResolution.Dispute memory dispute = disputeResolution.getDispute(disputeId);  
+    assertEq(uint256(dispute.status), uint256(DisputeResolution.DisputeStatus.OPEN));  
+}
+```
+
+## Fix
+
+Add stake refund logic to cancelResolution to return the stake to the disputant when a resolution is cancelled:
+
+```solidity
+function cancelResolution(bytes32 disputeId) external onlyOwner {  
+    if (!hasPendingResolution[disputeId]) revert NoPendingResolution();  
+  
+    Dispute storage dispute = disputes[disputeId];  
+      
+    // FIX: Refund the stake to the disputant  
+    if (dispute.stakedAmount > 0) {  
+        mntyToken.safeTransfer(dispute.disputant, dispute.stakedAmount);  
+    }  
+  
+    delete pendingResolutions[disputeId];  
+    hasPendingResolution[disputeId] = false;  
+  
+    emit ResolutionCancelled(disputeId, block.timestamp);  
+}
+```
+
+Alternatively, add a separate function that allows the disputant to withdraw their stake if a resolution has been cancelled and the dispute is still in OPEN status.
+    
