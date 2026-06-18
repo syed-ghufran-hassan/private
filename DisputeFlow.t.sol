@@ -167,4 +167,70 @@ contract DisputeFlowTest is Test {
         vm.prank(workerOwner);
         mnty.approve(address(disputeResolution), DISPUTE_STAKE);
     }
+    function test_POC_DisputeWindowDurationMismatch() public {  
+    // Step 1: Worker gets slashed  
+    bytes32 slashId = _slash();  
+      
+    // Step 2: Worker does NOT open a dispute (chooses not to dispute)  
+    // Skip _approveDisputeStake() and openDispute()  
+      
+    // Step 3: Wait 3 days - DisputeResolution window expires  
+    vm.warp(block.timestamp + 3 days + 1);  
+      
+    // Verify dispute window has expired in DisputeResolution  
+    vm.expectRevert(DisputeResolution.DisputeWindowExpired.selector);  
+    vm.prank(workerOwner);  
+    disputeResolution.openDispute(slashId, keccak256("counter"));  
+      
+    // Step 4: Try to withdraw at T=3 days - should fail due to StakingVault's 7-day window  
+    vm.expectRevert(StakingVault.StakeUnderDispute.selector);  
+    vm.prank(workerOwner);  
+    vault.withdraw(workerAgentId, 100 ether);  
+      
+    // Step 5: Wait until T=7 days - StakingVault auto-clear window expires  
+    vm.warp(block.timestamp + 4 days); // Total: 7 days from slash  
+      
+    // Step 6: Now withdrawal should succeed  
+    uint256 balanceBefore = mnty.balanceOf(workerOwner);  
+    vm.prank(workerOwner);  
+    vault.withdraw(workerAgentId, 100 ether);  
+      
+    assertEq(mnty.balanceOf(workerOwner), balanceBefore + 100 ether);  
+}
+function test_POC_StakeLockupOnCancellation() public {  
+    // Step 1: Worker opens dispute with 100 ether stake  
+    bytes32 disputeId = _openDispute();  
+    uint256 workerBalanceBefore = mnty.balanceOf(workerOwner);  
+    uint256 contractBalanceBefore = mnty.balanceOf(address(disputeResolution));  
+      
+    // Verify stake was transferred to contract  
+    assertEq(contractBalanceBefore, DISPUTE_STAKE);  
+    assertEq(workerBalanceBefore, 10_000 ether - DISPUTE_STAKE - 1_000 ether); // 1000 ether staked in vault  
+      
+    // Step 2: Owner proposes resolution  
+    disputeResolution.proposeResolution(disputeId, true, "valid evidence");  
+      
+    // Step 3: Owner cancels resolution before timelock expires  
+    disputeResolution.cancelResolution(disputeId);  
+      
+    // Verify pending resolution is cleared  
+    assertFalse(disputeResolution.hasPendingResolution(disputeId));  
+      
+    // Step 4: Try to execute resolution - should fail (no pending resolution)  
+    vm.expectRevert(DisputeResolution.NoPendingResolution.selector);  
+    disputeResolution.executeResolution(disputeId);  
+      
+    // Step 5: Worker has no way to reclaim stake  
+    // - executeResolution fails (no pending resolution)  
+    // - No withdraw function in DisputeResolution  
+    // - cancelResolution doesn't refund  
+      
+    // Verify stake is still locked in contract  
+    assertEq(mnty.balanceOf(address(disputeResolution)), DISPUTE_STAKE);  
+    assertEq(mnty.balanceOf(workerOwner), workerBalanceBefore);  
+      
+    // Dispute status remains OPEN but no resolution exists  
+    DisputeResolution.Dispute memory dispute = disputeResolution.getDispute(disputeId);  
+    assertEq(uint256(dispute.status), uint256(DisputeResolution.DisputeStatus.OPEN));  
+}
 }
