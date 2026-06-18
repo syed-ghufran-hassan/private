@@ -127,7 +127,7 @@ function renewSubscription() external nonReentrant {
 }
 ```
 
-[M-02] Dispute Window Duration Mismatch creates 4-day withdrawal block period
+# [M-02] Dispute Window Duration Mismatch creates 4-day withdrawal block period
 
 ## Summary
 
