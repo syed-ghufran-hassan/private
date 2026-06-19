@@ -27,12 +27,19 @@ contract AutopoolDebtHalmosTest is Test {
     assert(destInfo.cachedMinDebtValue <= destInfo.cachedDebtValue);  
     assert(destInfo.cachedDebtValue <= destInfo.cachedMaxDebtValue);  
 }
-function checkWithdrawalSafety() public {  
-    IAutopool.AssetBreakdown memory breakdown;  
-    breakdown.totalIdle = uint256(keccak256("idle"));  
-    breakdown.totalDebtMin = uint256(keccak256("minDebt"));  
+function checkWithdrawalSafety(  
+    uint256 totalIdle,  
+    uint256 totalDebtMin,  
+    uint256 assets  
+) public {  
+    // Constrain inputs to valid states  
+    assume(totalIdle >= 0);  
+    assume(totalDebtMin >= 0);  
+    assume(assets >= 0);  
       
-    uint256 assets = uint256(keccak256("assets"));  
+    IAutopool.AssetBreakdown memory breakdown;  
+    breakdown.totalIdle = totalIdle;  
+    breakdown.totalDebtMin = totalDebtMin;  
       
     // Calculate what would be pulled from market  
     uint256 assetsFromIdle = assets > breakdown.totalIdle ? 0 : assets;  
