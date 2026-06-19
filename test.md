@@ -129,6 +129,13 @@ function checkUnderflowProtection(
     uint256 debtMinDecrease,  
     uint256 debtMaxDecrease  
 ) public {  
+    // Constrain inputs to valid states  
+    assume(currentTotalDebtMin <= currentTotalDebt);  
+    assume(currentTotalDebt <= currentTotalDebtMax);  
+    assume(currentTotalDebtMin >= 0);  
+    assume(currentTotalDebt >= 0);  
+    assume(currentTotalDebtMax >= 0);  
+      
     // Apply the underflow protection logic  
     uint256 newTotalDebt = debtDecrease > currentTotalDebt ? 0 : currentTotalDebt - debtDecrease;  
     uint256 newTotalDebtMin = debtMinDecrease > currentTotalDebtMin ? 0 : currentTotalDebtMin - debtMinDecrease;  
