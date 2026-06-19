@@ -11,8 +11,13 @@ import { Math } from "openzeppelin-contracts/utils/math/Math.sol";
   
 contract AutopoolDebtHalmosTest is Test {  
      
-   function checkAssetBreakdownOrdering() public {  
-    // Setup: initialize Autopool with arbitrary valid state  
+  function checkAssetBreakdownOrdering(  
+    uint256 cachedMinDebtValue,  
+    uint256 cachedDebtValue,  
+    uint256 cachedMaxDebtValue  
+) public {  
+    assume(cachedMinDebtValue <= cachedDebtValue);  
+    assume(cachedDebtValue <= cachedMaxDebtValue);
     AutopoolDebt.DestinationInfo memory destInfo;  
     destInfo.cachedMinDebtValue = uint256(keccak256("min"));  
     destInfo.cachedDebtValue = uint256(keccak256("mid"));  
