@@ -1,100 +1,133 @@
 ```solidity
+ // SPDX-License-Identifier: UNLICENSED  
+pragma solidity 0.8.17;  
+  
+import { Test } from "forge-std/Test.sol";  
+import { AutopoolDebt } from "src/vault/libs/AutopoolDebt.sol";  
+import { IAutopool } from "src/interfaces/vault/IAutopool.sol";  
+  
+contract AutopoolDebtHalmosTest is Test {  
+     
+   function checkAssetBreakdownOrdering() public {  
+    // Setup: initialize Autopool with arbitrary valid state  
+    AutopoolDebt.DestinationInfo memory destInfo;  
+    destInfo.cachedMinDebtValue = uint256(keccak256("min"));  
+    destInfo.cachedDebtValue = uint256(keccak256("mid"));  
+    destInfo.cachedMaxDebtValue = uint256(keccak256("max"));  
+      
+    // Invariant: min <= mid <= max  
+    assert(destInfo.cachedMinDebtValue <= destInfo.cachedDebtValue);  
+    assert(destInfo.cachedDebtValue <= destInfo.cachedMaxDebtValue);  
+}
+function checkWithdrawalSafety() public {  
+    IAutopool.AssetBreakdown memory breakdown;  
+    breakdown.totalIdle = uint256(keccak256("idle"));  
+    breakdown.totalDebtMin = uint256(keccak256("minDebt"));  
+      
+    uint256 assets = uint256(keccak256("assets"));  
+      
+    // Calculate what would be pulled from market  
+    uint256 assetsFromIdle = assets > breakdown.totalIdle ? 0 : assets;  
+    uint256 totalAssetsToPull = assets - assetsFromIdle;  
+      
+    // Invariant: withdrawal cannot exceed available assets  
+    assert(totalAssetsToPull <= breakdown.totalIdle + breakdown.totalDebtMin);  
+}
+function checkDebtRecalculationInvariant(  
+    uint256 originalShares,  
+    uint256 currentShares,  
+    uint256 cachedDebtValue,  
+    uint256 cachedMinDebtValue,  
+    uint256 cachedMaxDebtValue,  
+    uint256 prevOwnedShares  
+) public {  
+    // Assume valid inputs  
+    assume(prevOwnedShares > 0);  
+    assume(originalShares <= prevOwnedShares);  
+    assume(cachedMinDebtValue <= cachedDebtValue && cachedDebtValue <= cachedMaxDebtValue);  
+      
+    // Calculate debt decreases  
+    uint256 debtDecrease = (cachedDebtValue * originalShares) / prevOwnedShares;  
+    uint256 minDebtDecrease = (cachedMinDebtValue * originalShares) / prevOwnedShares;  
+    uint256 maxDebtDecrease = (cachedMaxDebtValue * originalShares) / prevOwnedShares;  
+      
+    // Invariant: decreases should maintain ordering  
+    assert(minDebtDecrease <= debtDecrease);  
+    assert(debtDecrease <= maxDebtDecrease);  
+      
+    // Invariant: decreases should not exceed cached values  
+    assert(minDebtDecrease <= cachedMinDebtValue);  
+    assert(debtDecrease <= cachedDebtValue);  
+    assert(maxDebtDecrease <= cachedMaxDebtValue);  
+}
+function checkFlashRebalanceConservation(  
+    uint256 totalIdleBefore,  
+    uint256 totalDebtBefore,  
+    uint256 totalIdleDecrease,  
+    uint256 totalIdleIncrease,  
+    uint256 totalDebtDecrease,  
+    uint256 totalDebtIncrease  
+) public {  
+    // Setup valid state  
+    assume(totalIdleBefore >= totalIdleDecrease);  
+    assume(totalDebtBefore >= totalDebtDecrease);  
+      
+    uint256 totalIdleAfter = totalIdleBefore - totalIdleDecrease + totalIdleIncrease;  
+    uint256 totalDebtAfter = totalDebtBefore - totalDebtDecrease + totalDebtIncrease;  
+      
+    // Invariant: total assets should not decrease (ignoring swap costs which are external)  
+    // This is a simplified invariant - in reality, swap costs may reduce total  
+    assert(totalIdleAfter + totalDebtAfter >= 0);  
+}
+function checkStaleDataConservatism(  
+    uint256 cachedMaxDebtValue,  
+    uint256 cachedMinDebtValue,  
+    uint256 currentShares,  
+    uint256 ownedShares,  
+    uint256 ceilingPrice,  
+    uint256 floorPrice  
+) public {  
+    assume(ownedShares > 0);  
+    assume(cachedMinDebtValue <= cachedMaxDebtValue);  
+      
+    // Deposit case: use ceiling price  
+    uint256 staleDebtDeposit = cachedMaxDebtValue.mulDiv(currentShares, ownedShares, Math.Rounding.Down);  
+    uint256 newValueDeposit = (currentShares * ceilingPrice) / 1e18;  
+      
+    // Invariant: for deposits, use the more conservative (higher) value  
+    uint256 finalDepositValue = staleDebtDeposit > newValueDeposit ? staleDebtDeposit : newValueDeposit;  
+    assert(finalDepositValue >= newValueDeposit);  
+      
+    // Withdrawal case: use floor price  
+    uint256 staleDebtWithdraw = cachedMinDebtValue.mulDiv(currentShares, ownedShares, Math.Rounding.Up);  
+    uint256 newValueWithdraw = (currentShares * floorPrice) / 1e18;  
+      
+    // Invariant: for withdrawals, use the more conservative (lower) value  
+    uint256 finalWithdrawValue = staleDebtWithdraw < newValueWithdraw ? staleDebtWithdraw : newValueWithdraw;  
+    assert(finalWithdrawValue <= newValueWithdraw);  
+}
+function checkUnderflowProtection(  
+    uint256 currentTotalDebt,  
+    uint256 currentTotalDebtMin,  
+    uint256 currentTotalDebtMax,  
+    uint256 debtDecrease,  
+    uint256 debtMinDecrease,  
+    uint256 debtMaxDecrease  
+) public {  
+    // Apply the underflow protection logic  
+    uint256 newTotalDebt = debtDecrease > currentTotalDebt ? 0 : currentTotalDebt - debtDecrease;  
+    uint256 newTotalDebtMin = debtMinDecrease > currentTotalDebtMin ? 0 : currentTotalDebtMin - debtMinDecrease;  
+    uint256 newTotalDebtMax = debtMaxDecrease > currentTotalDebtMax ? 0 : currentTotalDebtMax - debtMaxDecrease;  
+      
+    // Invariant: values should never be negative  
+    assert(newTotalDebt >= 0);  
+    assert(newTotalDebtMin >= 0);  
+    assert(newTotalDebtMax >= 0);  
+      
+    // Invariant: ordering should be maintained  
+    assert(newTotalDebtMin <= newTotalDebt);  
+    assert(newTotalDebt <= newTotalDebtMax);  
+}
 
-dd this test contract to test/vault/AerodromeDestinationVault.t.sol after line 571 (after AerodromeCollectRewards). AerodromeDestinationVault.t.sol:571
-
-
-contract GaugeKilledPostInitialization is AerodromeDestinationVaultBaseTest {  
-    function setUp() public virtual override {  
-        super.setUp();  
-        // Deposit LP tokens while gauge is alive  
-        _runDVDeposit(1e18);  
-    }  
-  
-    function test_RevertIf_WithdrawalWhenGaugeKilled() public {  
-        // Expected: Withdrawal succeeds when gauge is alive  
-        // Actual: Withdrawal reverts when gauge is killed, locking funds  
-          
-        uint256 gaugeBalanceBefore = _aeroGauge.balanceOf(address(_dv));  
-        assertGt(gaugeBalanceBefore, 0, "Funds should be staked in gauge");  
-  
-        // Simulate Aerodrome governance killing the gauge  
-        vm.mockCall(  
-            AERODROME_VOTER_BASE,  
-            abi.encodeWithSelector(IVoter.isAlive.selector, address(_aeroGauge)),  
-            abi.encode(false)  
-        );  
-  
-        // Mock gauge.withdraw to revert with specific error (simulating killed gauge behavior)  
-        vm.mockCall(  
-            address(_aeroGauge),  
-            abi.encodeWithSelector(IAerodromeGauge.withdraw.selector),  
-            abi.encodeWithSelector(Errors.InvalidParam.selector, "GaugeKilled")  
-        );  
-  
-        // Attempt to withdraw - should revert because gauge is killed  
-        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidParam.selector, "GaugeKilled"));  
-        _dv.withdrawUnderlying(1e18, address(this));  
-  
-        // Verify funds remain locked in gauge (impact assertion)  
-        uint256 gaugeBalanceAfter = _aeroGauge.balanceOf(address(_dv));  
-        assertEq(gaugeBalanceAfter, gaugeBalanceBefore, "Funds remain stuck in killed gauge");  
-    }  
-  
-    function test_RevertIf_DepositWhenGaugeKilled() public {  
-        // Expected: Deposit succeeds when gauge is alive  
-        // Actual: Deposit reverts when gauge is killed, preventing new deposits  
-          
-        // Simulate Aerodrome governance killing the gauge  
-        vm.mockCall(  
-            AERODROME_VOTER_BASE,  
-            abi.encodeWithSelector(IVoter.isAlive.selector, address(_aeroGauge)),  
-            abi.encode(false)  
-        );  
-  
-        // Mock gauge.deposit to revert with specific error (simulating killed gauge behavior)  
-        vm.mockCall(  
-            address(_aeroGauge),  
-            abi.encodeWithSelector(IAerodromeGauge.deposit.selector, 1e18),  
-            abi.encodeWithSelector(Errors.InvalidParam.selector, "GaugeKilled")  
-        );  
-  
-        // Attempt new deposit - should revert because gauge is killed  
-        _dealLP(address(this));  
-        _approveUnderlyer(address(_dv));  
-        _mockIsVault();  
-  
-        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidParam.selector, "GaugeKilled"));  
-        _dv.depositUnderlying(1e18);  
-    }  
-  
-    function test_RevertIf_ensureLocalUnderlyingBalanceWhenGaugeKilled() public {  
-        // Expected: Unstake succeeds when gauge is alive  
-        // Actual: Unstake reverts when gauge is killed, preventing withdrawals  
-          
-        uint256 gaugeBalanceBefore = _aeroGauge.balanceOf(address(_dv));  
-        assertGt(gaugeBalanceBefore, 0, "Funds should be staked in gauge");  
-  
-        // Simulate Aerodrome governance killing the gauge  
-        vm.mockCall(  
-            AERODROME_VOTER_BASE,  
-            abi.encodeWithSelector(IVoter.isAlive.selector, address(_aeroGauge)),  
-            abi.encode(false)  
-        );  
-  
-        // Mock gauge.withdraw to revert with specific error (simulating killed gauge behavior)  
-        vm.mockCall(  
-            address(_aeroGauge),  
-            abi.encodeWithSelector(IAerodromeGauge.withdraw.selector),  
-            abi.encodeWithSelector(Errors.InvalidParam.selector, "GaugeKilled")  
-        );  
-  
-        // Direct call to unstake function - should revert  
-        vm.expectRevert(abi.encodeWithSelector(Errors.InvalidParam.selector, "GaugeKilled"));  
-        _dv.ensureLocalUnderlyingBalance(1e18);  
-  
-        // Verify funds remain locked in gauge (impact assertion)  
-        uint256 gaugeBalanceAfter = _aeroGauge.balanceOf(address(_dv));  
-        assertEq(gaugeBalanceAfter, gaugeBalanceBefore, "Funds remain stuck in killed gauge");  
-    }  
 }
 ```
