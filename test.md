@@ -7,6 +7,7 @@ pragma solidity 0.8.17;
 import { Test } from "forge-std/Test.sol";  
 import { AutopoolDebt } from "src/vault/libs/AutopoolDebt.sol";  
 import { IAutopool } from "src/interfaces/vault/IAutopool.sol";  
+import { Math } from "openzeppelin-contracts/utils/math/Math.sol";
   
 contract AutopoolDebtHalmosTest is Test {  
      
