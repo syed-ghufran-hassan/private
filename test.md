@@ -1,3 +1,5 @@
+halmos --test test/halmos/vault/AutopoolDebt.t.sol --function checkAssetBreakdownOrdering
+
 ```solidity
  // SPDX-License-Identifier: UNLICENSED  
 pragma solidity 0.8.17;  
